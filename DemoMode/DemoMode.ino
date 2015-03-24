@@ -60,11 +60,6 @@ void setup() {
   Serial.begin(9600);
   Serial.println("LAMP Controller v.2013-04-05-r4.");
   analogWrite(pin[RED], 0);  // startup indicator
-  
-  // calculate a good value for rotateAfter multiple of 256*LCM(fadeStepWait)
-  //rotateAfter = 256;
-  //for(int i=0; i<QTYWAIT; i++)
-  //  rotateAfter *= fadeStepWait[i];
 
   analogWrite(pin[YELLOW], 0);  // startup indicator
 
