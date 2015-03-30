@@ -143,21 +143,6 @@ void loop() {
         // We're receiving commands, so disable the RGBAFade demo mode
         mode = cmdMode;
     
-        switch(command[0]) {
-          case 'r':
-          case 'a':
-          case 'g':
-          case 'b':
-          
-            // parse the 3-digit decimal value provided with the command
-            int digit[3];
-            for (int k = 0; k < 3; k++) {
-              digit[k] = command[k + 1]-48;
-            }
-            commandVal = 100*digit[0] + 10*digit[1] + digit[2];
-            break;  // exit switch(command[0])
-        } // end switch(command[0])
-        
         // enter has been pressed, so break from for loop to read additional charaters
         // into the command
         break;
@@ -167,16 +152,16 @@ void loop() {
     // execute the received command
     switch (command[0]) {
       case 'r':
-        leds.set(LDriver::RED, commandVal);
+        leds.set(LDriver::RED, extractDecimal(command, 1, 3));
         break;
       case 'a':
-        leds.set(LDriver::AMBER, commandVal);
+        leds.set(LDriver::AMBER, extractDecimal(command, 1, 3));
         break;
       case 'g':
-        leds.set(LDriver::GREEN, commandVal);
+        leds.set(LDriver::GREEN, extractDecimal(command, 1, 3));
         break;
       case 'b':
-        leds.set(LDriver::BLUE, commandVal);
+        leds.set(LDriver::BLUE, extractDecimal(command, 1, 3));
         break;
       case 'q':
         // to quit and return to RGBAFade demo mode
@@ -286,6 +271,21 @@ void loop() {
       break; // end case lidarMode
     } // end switch(mode) 
   } // end else for if(client)
+}
+
+// Converts n decimal digits in string str, starting from start, into an integer
+// If a non-decimal character is encountered, it stops processing characters and
+//  returns the value so far.
+// Note that the returned value may not necessarily be between 0 and 255.
+int extractDecimal(char str[], int start, int n) {
+  int value = 0;
+  for(int i=0; i<n; i++) {
+    int digit = str[start + i]-48;
+    if(digit < 0 || digit > 9)
+      break;
+    value = value*10 + digit;
+  }
+  return(value);
 }
 
 // returns a pseudorandom byte (using RC4)
