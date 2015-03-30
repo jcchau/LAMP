@@ -12,6 +12,9 @@
 #include <SPI.h>
 #include <Ethernet.h>
 
+// For the LAMP driver
+#include "LDriver.h"
+
 // for the PulsedLight LIDAR-Lite Laser Module
 // Arduino I2C Master Library from
 //  http://www.dsscircuits.com/index.php/articles/66-arduino-i2c-master-library
@@ -29,13 +32,10 @@ byte mac[] = { 0x90, 0xA2, 0xDA, 0x0C, 0x00, 0x9F };
 // Listen on port 23
 EthernetServer server(23);
 
+// Object to control the LAMP LEDs
+LDriver leds;
+
 // *** Global vars for RGBAFade ***
-// Order is red, yellow, green, blue
-enum ColorIndex {RED,YELLOW,GREEN,BLUE};
-// output pin for each color
-int pin[4] = {3, 5, 6, 9};
-// the current brightness of each color (start all off)
-int brightness[4] = {255, 255, 255, 255};
 // number of elements in fadeStepWait
 const int QTYWAIT = 8;
 // (relatively prime) wait time between incrementing each color
@@ -66,20 +66,14 @@ int distanceThreshold = 50;
 // generates a pseudo-random byte
 byte prng();
 
-void setup() {
-  // declare all color output pins to be outputs
-  for(int i=0; i<4; i++) {
-    pinMode(pin[i], OUTPUT);
-    // all LEDs off
-    analogWrite(pin[i], 255);
-  } 
-
+void setup() {  
+  leds.show(1);  // startup indicator
+  
   // Start the serial port for debugging
   Serial.begin(9600);
   Serial.println("LAMP Controller v.2015-03-30.");
-  analogWrite(pin[RED], 0);  // startup indicator
 
-  analogWrite(pin[YELLOW], 0);  // startup indicator
+  leds.show(2);  // startup indicator
 
   // Start networking
   Ethernet.begin(mac);
@@ -87,14 +81,14 @@ void setup() {
   Serial.print("Server address: ");
   Serial.println(Ethernet.localIP());
   
-  analogWrite(pin[GREEN], 0);  // startup indicator
+  leds.show(3);  // startup indicator
   
   // Initialize the LIDAR device (copied from PulsedLight reference)
   I2c.begin();
   delay(100);
   I2c.timeOut(50);
   
-  analogWrite(pin[RED], 255);  // startup indicator
+  leds.show(4);  // startup indicator
   
   // initialize RC4 PRNG
   // use the MAC address, IP address, and analog inputs as the key
@@ -119,12 +113,9 @@ void setup() {
   for(int i=0; i<256; i++)
     nLUT[i] = ( i&0x80 + i&0x40 + i&0x20 + i&0x10 - i&0x08 - i&0x04 - i&0x02 - i&0x01 );
     
-  analogWrite(pin[BLUE], 0);  // startup indicator
+  leds.show(5);  // startup indicator
   
-  // Turn everything off in preparation for LIDAR mode
-  for(int i=0; i<4; i++) {
-    analogWrite(pin[i], 255);
-  }
+  leds.allOff();  // in preparation for LIDAR mode
 }
 
 void loop() {
@@ -143,39 +134,29 @@ void loop() {
     for (int n=0; n<6; n++) {
       do {
         command[n] = client.read();
-        //Serial.print('.');
         // keep trying if we don't get a character
       } while(command[n] == -1);
 
-      // debugging output
-      //Serial.print("\nReceived: ");
-      //Serial.print(command[n]);
-      //Serial.print(", ");
-      //Serial.println(int(command[n]));
-      // make sure everything gets printed before going into uncertain parts (Jimmy)
-      //Serial.flush();
-
-      //once user hits "enter" button, we try and utilize command
+      // once user hits "enter" button, we try and utilize command
       if (command[n] == '\n') { //if "enter" button has been pressed
-        //Serial.println("Command received.");
-        //Serial.flush();
 
         // We're receiving commands, so disable the RGBAFade demo mode
         mode = cmdMode;
     
-        if (command[0] == 'r' || command[0] == 'g' || command[0] == 'b' || command[0] == 'y'  ) {
-
-          // parse the 3-digit decimal value provided with the command
-          int digit[3];
-          for (int k = 0; k < 3; k++) {
-            digit[k] = command[k + 1]-48;
-            //Serial.println(digit[k]);
-          }
-          commandVal = 100*digit[0] + 10*digit[1] + digit[2];
-          //Serial.print("commandVal = ");
-          //Serial.println(commandVal);
-          //Serial.flush();
-        } // end if checking first char of command
+        switch(command[0]) {
+          case 'r':
+          case 'a':
+          case 'g':
+          case 'b':
+          
+            // parse the 3-digit decimal value provided with the command
+            int digit[3];
+            for (int k = 0; k < 3; k++) {
+              digit[k] = command[k + 1]-48;
+            }
+            commandVal = 100*digit[0] + 10*digit[1] + digit[2];
+            break;  // exit switch(command[0])
+        } // end switch(command[0])
         
         // enter has been pressed, so break from for loop to read additional charaters
         // into the command
@@ -186,20 +167,16 @@ void loop() {
     // execute the received command
     switch (command[0]) {
       case 'r':
-        brightness[RED] = commandVal;
-        analogWrite(pin[RED], commandVal);
+        leds.set(LDriver::RED, commandVal);
+        break;
+      case 'a':
+        leds.set(LDriver::AMBER, commandVal);
         break;
       case 'g':
-        brightness[GREEN] = commandVal;
-        analogWrite(pin[GREEN], commandVal);
+        leds.set(LDriver::GREEN, commandVal);
         break;
       case 'b':
-        brightness[BLUE] = commandVal;
-        analogWrite(pin[BLUE], commandVal);
-        break;
-      case 'y':
-        brightness[YELLOW] = commandVal;
-        analogWrite(pin[YELLOW], commandVal);
+        leds.set(LDriver::BLUE, commandVal);
         break;
       case 'q':
         // to quit and return to RGBAFade demo mode
@@ -210,21 +187,19 @@ void loop() {
       case 'l': // "el"
         // change to the LIDAR demo mode
         client.println("Switching to LIDAR demo mode unitl the next command.");
-        for(int i=0; i<4; i++) {
-          analogWrite(pin[i], 255);
-        }
+        leds.allOff();
         mode = lidarMode;
         break;
       default: 
         // values in the case of no input
         client.print("Red: ");
-        client.println(brightness[RED]);  //prints current values or default
+        client.println(leds.get(LDriver::RED));
         client.print("Green: ");
-        client.println(brightness[GREEN]);  //prints current values or default
+        client.println(leds.get(LDriver::GREEN));
         client.print("Blue: ");
-        client.println(brightness[BLUE]);  //prints current values or default
-        client.print("Yellow: ");
-        client.println(brightness[YELLOW]);  //prints current values or default
+        client.println(leds.get(LDriver::BLUE));
+        client.print("Amber: ");
+        client.println(leds.get(LDriver::AMBER));
     } // end received command execution switch statement
     
   } // end if(client)
@@ -241,19 +216,19 @@ void loop() {
       for(int i=0; i<4; i++) {
         if((untilRotate%fadeStepWait[i]) == 0) {
           // increment brightness and add noise
-          brightness[i] += fadeIncrement[i] + nLUT[prng()];
+          leds.brightness[i] += fadeIncrement[i] + nLUT[prng()];
         
           // if the brightness passes the boundaries, "bounce" off
-          if(brightness[i] < 0) {
-            brightness[i] = -brightness[i];
+          if(leds.brightness[i] < 0) {
+            leds.brightness[i] = -leds.brightness[i];
             fadeIncrement[i] = -fadeIncrement[i];
           }
-          else if(brightness[i] > 255) {
-            brightness[i] = 510-brightness[i];
+          else if(leds.brightness[i] > 255) {
+            leds.brightness[i] = 510-leds.brightness[i];
             fadeIncrement[i] = -fadeIncrement[i];
           }
           
-          analogWrite(pin[i], brightness[i]);
+          leds.reset(i);
         }
       }
       
@@ -286,12 +261,12 @@ void loop() {
           Serial.println(distance);
           Serial.flush();
           if(distance < distanceThreshold) {
-            analogWrite(pin[RED], 255);
-            analogWrite(pin[GREEN], 0);
+            leds.brighter(LDriver::GREEN);
+            leds.darker(LDriver::RED);
           }
           else {
-            analogWrite(pin[RED], 0);
-            analogWrite(pin[GREEN], 255);
+            leds.brighter(LDriver::RED);
+            leds.darker(LDriver::GREEN);
           } // end else of if(distance < distanceThreshold)
         } // end if(I2c.read(...) == 0)
         else {
