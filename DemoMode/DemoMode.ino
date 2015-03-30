@@ -1,15 +1,26 @@
 /* DemoMode
-  Combines RGBAFade with completecode_Jimmy
-  Both of these are from the July 19, 2012 email to Lucy T. Yan
-  
-  Code by Jimmy C. Chau and Lucy T. Yan.
-  Merged by Jimmy C. Chau <jchau@bu.edu> 2013 Apr 04
-  Last modified 2013 Apr 05
+  Demonstration and operating software for LAMP
+  Original code (completecode_Jimmy) by Jimmy C. Chau and Lucy T. Yan.
+  RGBAFade demo mode added and merged by Jimmy C. Chau <jchau@bu.edu> 2013 Apr 04.
+  LIDAR module code added by Jimmy Chau 2015 Mar 25,
+    using code from PulsedLight as a reference:
+    https://github.com/PulsedLight3D/LIDARLite_Basics/blob/master/Arduino/LIDARLite_I2C_Library_GetDistance_ContinuousRead/LIDARLite_I2C_Library_GetDistance_ContinuousRead.ino
+  Thanks to Yuting Zhang for her help with adding the LIDAR device.
 */
 
 // for the Ethernet Shield
 #include <SPI.h>
 #include <Ethernet.h>
+
+// for the PulsedLight LIDAR-Lite Laser Module
+// Arduino I2C Master Library from
+//  http://www.dsscircuits.com/index.php/articles/66-arduino-i2c-master-library
+#include <I2C.h>
+// I2C configuration parameters (copied from Pulsed Light reference)
+#define LIDARLite_ADDRESS   0x62          // Default I2C Address of LIDAR-Lite.
+#define RegisterMeasure     0x00          // Register to write to initiate ranging.
+#define MeasureValue        0x04          // Value to initiate ranging.
+#define RegisterHighLowB    0x8f          // Register to get both High and Low bytes in 1 call.
 
 // *** Global vars for the regular demo (from completecode_Jimmy ***
 // TODO: update this MAC address for each Arduino (with an Ethernet shield)
@@ -43,7 +54,14 @@ byte rc4_S[256];
 // the noise look-up table
 byte nLUT[256];
 
-bool fadeDemoMode = true;
+// the current operating mode of the system
+enum Demos {cmdMode, fadeMode, lidarMode} mode = lidarMode;
+
+// whether the LIDAR system has a fresh measurement
+bool lidarFresh = false;
+
+// distance threshold
+int distanceThreshold = 50;
 
 // generates a pseudo-random byte
 byte prng();
@@ -58,7 +76,7 @@ void setup() {
 
   // Start the serial port for debugging
   Serial.begin(9600);
-  Serial.println("LAMP Controller v.2013-04-05-r4.");
+  Serial.println("LAMP Controller v.2015-03-30.");
   analogWrite(pin[RED], 0);  // startup indicator
 
   analogWrite(pin[YELLOW], 0);  // startup indicator
@@ -70,6 +88,13 @@ void setup() {
   Serial.println(Ethernet.localIP());
   
   analogWrite(pin[GREEN], 0);  // startup indicator
+  
+  // Initialize the LIDAR device (copied from PulsedLight reference)
+  I2c.begin();
+  delay(100);
+  I2c.timeOut(50);
+  
+  analogWrite(pin[RED], 255);  // startup indicator
   
   // initialize RC4 PRNG
   // use the MAC address, IP address, and analog inputs as the key
@@ -95,12 +120,17 @@ void setup() {
     nLUT[i] = ( i&0x80 + i&0x40 + i&0x20 + i&0x10 - i&0x08 - i&0x04 - i&0x02 - i&0x01 );
     
   analogWrite(pin[BLUE], 0);  // startup indicator
+  
+  // Turn everything off in preparation for LIDAR mode
+  for(int i=0; i<4; i++) {
+    analogWrite(pin[i], 255);
+  }
 }
 
 void loop() {
   EthernetClient client = server.available(); //gives you a client!
   
-  if(client) {
+  if(client) {  // tests if any data from the client is available for reading
     // Await the client's command if the client is connected
 
     char command[7];  // allocate 7 chars for client commands
@@ -131,7 +161,7 @@ void loop() {
         //Serial.flush();
 
         // We're receiving commands, so disable the RGBAFade demo mode
-        fadeDemoMode = false;
+        mode = cmdMode;
     
         if (command[0] == 'r' || command[0] == 'g' || command[0] == 'b' || command[0] == 'y'  ) {
 
@@ -175,7 +205,15 @@ void loop() {
         // to quit and return to RGBAFade demo mode
         client.println("Returning to the RGBAFade demo until the next command.");
         // re-enable the RGBAFade demo
-        fadeDemoMode = true;
+        mode = fadeMode;
+        break;
+      case 'l': // "el"
+        // change to the LIDAR demo mode
+        client.println("Switching to LIDAR demo mode unitl the next command.");
+        for(int i=0; i<4; i++) {
+          analogWrite(pin[i], 255);
+        }
+        mode = lidarMode;
         break;
       default: 
         // values in the case of no input
@@ -190,46 +228,88 @@ void loop() {
     } // end received command execution switch statement
     
   } // end if(client)
-  else if (fadeDemoMode) {
-    // Run RGBAFade if no client is connected
-    delay(1);
+  else {
+    // if no data is available from the client
     
-    untilRotate--;
-    
-    for(int i=0; i<4; i++) {
-      if((untilRotate%fadeStepWait[i]) == 0) {
-        // increment brightness and add noise
-        brightness[i] += fadeIncrement[i] + nLUT[prng()];
+    switch(mode) {
+      case fadeMode:
+      // Run RGBAFade
+      delay(1);
       
-        // if the brightness passes the boundaries, "bounce" off
-        if(brightness[i] < 0) {
-          brightness[i] = -brightness[i];
-          fadeIncrement[i] = -fadeIncrement[i];
-        }
-        else if(brightness[i] > 255) {
-          brightness[i] = 510-brightness[i];
-          fadeIncrement[i] = -fadeIncrement[i];
-        }
+      untilRotate--;
+      
+      for(int i=0; i<4; i++) {
+        if((untilRotate%fadeStepWait[i]) == 0) {
+          // increment brightness and add noise
+          brightness[i] += fadeIncrement[i] + nLUT[prng()];
         
-        analogWrite(pin[i], brightness[i]);
+          // if the brightness passes the boundaries, "bounce" off
+          if(brightness[i] < 0) {
+            brightness[i] = -brightness[i];
+            fadeIncrement[i] = -fadeIncrement[i];
+          }
+          else if(brightness[i] > 255) {
+            brightness[i] = 510-brightness[i];
+            fadeIncrement[i] = -fadeIncrement[i];
+          }
+          
+          analogWrite(pin[i], brightness[i]);
+        }
       }
-    }
-    
-    // rotate the fade values
-    if(untilRotate <= 0) {
-      untilRotate = rotateAfter;
-      int toWrapAround = fadeStepWait[0];
-      for(int i=0; i<QTYWAIT-1; i++)
-        fadeStepWait[i] = fadeStepWait[i+1];
-      fadeStepWait[QTYWAIT-1] = toWrapAround;
-
-      // do a random swap
-      int i = prng() % QTYWAIT;
-      int j = prng() % QTYWAIT;
-      int temp = fadeStepWait[i];
-      fadeStepWait[i] = fadeStepWait[j];
-      fadeStepWait[j] = temp;
-    }
+      
+      // rotate the fade values
+      if(untilRotate <= 0) {
+        untilRotate = rotateAfter;
+        int toWrapAround = fadeStepWait[0];
+        for(int i=0; i<QTYWAIT-1; i++)
+          fadeStepWait[i] = fadeStepWait[i+1];
+        fadeStepWait[QTYWAIT-1] = toWrapAround;
+  
+        // do a random swap
+        int i = prng() % QTYWAIT;
+        int j = prng() % QTYWAIT;
+        int temp = fadeStepWait[i];
+        fadeStepWait[i] = fadeStepWait[j];
+        fadeStepWait[j] = temp;
+      }
+      break; // end case fadeMode
+      
+      case lidarMode:
+      if(lidarFresh) {
+        byte distanceArray[2];
+        if(I2c.read(LIDARLite_ADDRESS, RegisterHighLowB, 2, distanceArray) == 0) {
+          Serial.print("R");
+          Serial.flush();
+          lidarFresh = false;
+          int distance = (distanceArray[0] << 8) + distanceArray[1];
+          Serial.print("LIDAR distance: ");
+          Serial.println(distance);
+          Serial.flush();
+          if(distance < distanceThreshold) {
+            analogWrite(pin[RED], 255);
+            analogWrite(pin[GREEN], 0);
+          }
+          else {
+            analogWrite(pin[RED], 0);
+            analogWrite(pin[GREEN], 255);
+          } // end else of if(distance < distanceThreshold)
+        } // end if(I2c.read(...) == 0)
+        else {
+          Serial.print("r");
+          Serial.flush();
+        }        
+      } // end if(lidarFresh)
+      else {
+        Serial.print("t");
+        Serial.flush();
+        if(I2c.write(LIDARLite_ADDRESS,RegisterMeasure, MeasureValue) == 0) {
+          lidarFresh = true;
+        }
+      } // end else of if(lidarFresh)
+      
+      delay(1); // wait 1 ms to prevent overpolling
+      break; // end case lidarMode
+    } // end switch(mode) 
   } // end else for if(client)
 }
 
