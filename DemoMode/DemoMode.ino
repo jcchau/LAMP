@@ -18,15 +18,9 @@
 // For RGBAFade (fadeMode)
 #include "RGBAFade.h"
 
-// for the PulsedLight LIDAR-Lite Laser Module
-// Arduino I2C Master Library from
-//  http://www.dsscircuits.com/index.php/articles/66-arduino-i2c-master-library
+// For LIDAR distance readings
 #include <I2C.h>
-// I2C configuration parameters (copied from Pulsed Light reference)
-#define LIDARLite_ADDRESS   0x62          // Default I2C Address of LIDAR-Lite.
-#define RegisterMeasure     0x00          // Register to write to initiate ranging.
-#define MeasureValue        0x04          // Value to initiate ranging.
-#define RegisterHighLowB    0x8f          // Register to get both High and Low bytes in 1 call.
+#include "Lidar.h"
 
 // *** Global vars for the regular demo (from completecode_Jimmy ***
 // TODO: update this MAC address for each Arduino (with an Ethernet shield)
@@ -67,10 +61,7 @@ void setup() {
   
   leds.show(3);  // startup indicator
   
-  // Initialize the LIDAR device (copied from PulsedLight reference)
-  I2c.begin();
-  delay(100);
-  I2c.timeOut(50);
+  Lidar::begin();
   
   leds.show(4);  // startup indicator
   
@@ -160,46 +151,23 @@ void loop() {
     // if no data is available from the client
     
     switch(mode) {
+      
       case fadeMode:
-      // Run RGBAFade
-      fadeMachine->doFade(leds);
-      break; // end case fadeMode
+        // Run RGBAFade
+        fadeMachine->doFade(leds);
+        break; // end case fadeMode
       
       case lidarMode:
-      if(lidarFresh) {
-        byte distanceArray[2];
-        if(I2c.read(LIDARLite_ADDRESS, RegisterHighLowB, 2, distanceArray) == 0) {
-          Serial.print("R");
-          Serial.flush();
-          lidarFresh = false;
-          int distance = (distanceArray[0] << 8) + distanceArray[1];
-          Serial.print("LIDAR distance: ");
-          Serial.println(distance);
-          Serial.flush();
-          if(distance < distanceThreshold) {
-            leds.brighter(LDriver::GREEN);
-            leds.darker(LDriver::RED);
-          }
-          else {
-            leds.brighter(LDriver::RED);
-            leds.darker(LDriver::GREEN);
-          } // end else of if(distance < distanceThreshold)
-        } // end if(I2c.read(...) == 0)
-        else {
-          Serial.print("r");
-          Serial.flush();
-        }        
-      } // end if(lidarFresh)
-      else {
-        Serial.print("t");
-        Serial.flush();
-        if(I2c.write(LIDARLite_ADDRESS,RegisterMeasure, MeasureValue) == 0) {
-          lidarFresh = true;
+        if(Lidar::getReading() < distanceThreshold) {
+          leds.brighter(LDriver::GREEN);
+          leds.darker(LDriver::RED);
         }
-      } // end else of if(lidarFresh)
+        else {
+          leds.brighter(LDriver::RED);
+          leds.darker(LDriver::GREEN);
+        } // end else of if(distance < distanceThreshold)
+        break; // end case lidarMode
       
-      delay(1); // wait 1 ms to prevent overpolling
-      break; // end case lidarMode
     } // end switch(mode) 
   } // end else for if(client)
 }
