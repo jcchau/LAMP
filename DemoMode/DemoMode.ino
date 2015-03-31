@@ -42,8 +42,10 @@ enum Demos {cmdMode, fadeMode, lidarMode} mode = lidarMode;
 // whether the LIDAR system has a fresh measurement
 bool lidarFresh = false;
 
-// distance threshold
-int distanceThreshold = 50;
+// distance threshold for lidarMode
+// Set initially to the minimum acceptable distance threshold;
+//  setup() will automatically increase the threshold if there's extra space.
+int distanceThreshold = 50;  // 0.50 meters
 
 void setup() {
   leds.show(2);  // startup indicator
@@ -66,6 +68,15 @@ void setup() {
   leds.show(6);
   
   Lidar::begin();
+  
+  // Try to automatically set the threshold as 0.5 meters above the "ground".
+  int automaticThreshold = Lidar::getReading() - 50;
+  // But only accept the automatic threshold if it's not closer than the initial one.
+  // (If the threshold were too close, we might not be able to get close enough to
+  //  pass the threshold, and that would be tricky to debug if I forgot about the
+  //  automatic threshold.)
+  if(automaticThreshold > distanceThreshold)
+    distanceThreshold = automaticThreshold;
   
   leds.show(7);
   
