@@ -138,6 +138,11 @@ void loop() {
         leds.allOff();
         mode = lidarMode;
         break;
+      case 'd':
+        // Reply with the current LIDAR distance measurement
+        client.print("Distance: ");
+        client.println(Lidar::getNewReading());
+        break;
       default: 
         // values in the case of no input
         client.print("Red: ");
