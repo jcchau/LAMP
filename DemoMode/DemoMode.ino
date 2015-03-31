@@ -27,7 +27,8 @@
 byte mac[] = { 0x90, 0xA2, 0xDA, 0x0C, 0x00, 0x9F };
 
 // Listen on port 23
-EthernetServer server(23);
+const int PORT=23;
+EthernetServer server(PORT);
 
 // Object to control the LAMP LEDs
 LDriver leds;
@@ -44,26 +45,29 @@ bool lidarFresh = false;
 // distance threshold
 int distanceThreshold = 50;
 
-void setup() {  
-  leds.show(1);  // startup indicator
+void setup() {
+  leds.show(2);  // startup indicator
   
   // Start the serial port for debugging
   Serial.begin(9600);
   Serial.println("LAMP Controller v.2015-03-30.");
 
-  leds.show(2);  // startup indicator
+  leds.show(3);
 
   // Start networking
   Ethernet.begin(mac);
+  leds.show(5);
   server.begin();
   Serial.print("Server address: ");
-  Serial.println(Ethernet.localIP());
+  Serial.print(Ethernet.localIP());
+  Serial.print(":");
+  Serial.println(PORT);
   
-  leds.show(3);  // startup indicator
+  leds.show(6);
   
   Lidar::begin();
   
-  leds.show(4);  // startup indicator
+  leds.show(7);
   
   // initialize the RGBAFade fadeMachine
   // Pass it the MAC address and 4 bytes of the IP address to initialize the RC4 PRNG
@@ -72,7 +76,7 @@ void setup() {
     ipaddr[4] = Ethernet.localIP()[i];
   fadeMachine = new RGBAFade(mac, ipaddr);
       
-  leds.show(5);  // startup indicator
+  leds.show(8);
   
   leds.allOff();  // in preparation for LIDAR mode
 }
