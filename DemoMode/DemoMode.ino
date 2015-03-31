@@ -15,6 +15,9 @@
 // For the LAMP driver
 #include "LDriver.h"
 
+// For RGBAFade (fadeMode)
+#include "RGBAFade.h"
+
 // for the PulsedLight LIDAR-Lite Laser Module
 // Arduino I2C Master Library from
 //  http://www.dsscircuits.com/index.php/articles/66-arduino-i2c-master-library
@@ -35,24 +38,8 @@ EthernetServer server(23);
 // Object to control the LAMP LEDs
 LDriver leds;
 
-// *** Global vars for RGBAFade ***
-// number of elements in fadeStepWait
-const int QTYWAIT = 8;
-// (relatively prime) wait time between incrementing each color
-// the first 4 entries are the curently chosen values for the 4 colors
-// avoid factors of 255 (potential periodicities with bouncing)
-int fadeStepWait[QTYWAIT] = {29, 19, 11, 7, 13, 23, 31, 37};
-// stores the increment and the direction of fade (brighter or dimmer)
-int fadeIncrement[4] = {1, 1, 1, 1};
-// after a while, rotate the fadeStepWait array, so that one color isn't always slowest
-long int rotateAfter = 3600000;  // after approximately an hour
-long int untilRotate = 0;  // immediately rotate
-
-// for PRNG (to add noise to increase the likelihood of eventually reaching every color combination)
-byte rc4_S[256];
-
-// the noise look-up table
-byte nLUT[256];
+// Object for RGBAFade mode
+RGBAFade *fadeMachine;
 
 // the current operating mode of the system
 enum Demos {cmdMode, fadeMode, lidarMode} mode = lidarMode;
@@ -62,9 +49,6 @@ bool lidarFresh = false;
 
 // distance threshold
 int distanceThreshold = 50;
-
-// generates a pseudo-random byte
-byte prng();
 
 void setup() {  
   leds.show(1);  // startup indicator
@@ -90,29 +74,13 @@ void setup() {
   
   leds.show(4);  // startup indicator
   
-  // initialize RC4 PRNG
-  // use the MAC address, IP address, and analog inputs as the key
-  byte rc4_key[16];
-  for(int i=0; i<6; i++)
-    rc4_key[i] = mac[i];
+  // initialize the RGBAFade fadeMachine
+  // Pass it the MAC address and 4 bytes of the IP address to initialize the RC4 PRNG
+  byte ipaddr[4];
   for(int i=0; i<4; i++)
-    rc4_key[i+6] = Ethernet.localIP()[i];
-  for(int i=0; i<6; i++)
-    rc4_key[i+10] = analogRead(i) % 256;
-  for(int i=0; i<256; i++)
-    rc4_S[i]=i;
-  int j=0, temp;
-  for(int i=0; i<256; i++) {
-    j = ( j + rc4_S[i] + rc4_key[i%16] ) % 256;
-    temp = rc4_S[i];
-    rc4_S[i] = rc4_S[j];
-    rc4_S[j] = temp;
-  }
-  
-  // initialize nLUT[]: maps random bytes to additive noise
-  for(int i=0; i<256; i++)
-    nLUT[i] = ( i&0x80 + i&0x40 + i&0x20 + i&0x10 - i&0x08 - i&0x04 - i&0x02 - i&0x01 );
-    
+    ipaddr[4] = Ethernet.localIP()[i];
+  fadeMachine = new RGBAFade(mac, ipaddr);
+      
   leds.show(5);  // startup indicator
   
   leds.allOff();  // in preparation for LIDAR mode
@@ -194,44 +162,7 @@ void loop() {
     switch(mode) {
       case fadeMode:
       // Run RGBAFade
-      delay(1);
-      
-      untilRotate--;
-      
-      for(int i=0; i<4; i++) {
-        if((untilRotate%fadeStepWait[i]) == 0) {
-          // increment brightness and add noise
-          leds.brightness[i] += fadeIncrement[i] + nLUT[prng()];
-        
-          // if the brightness passes the boundaries, "bounce" off
-          if(leds.brightness[i] < 0) {
-            leds.brightness[i] = -leds.brightness[i];
-            fadeIncrement[i] = -fadeIncrement[i];
-          }
-          else if(leds.brightness[i] > 255) {
-            leds.brightness[i] = 510-leds.brightness[i];
-            fadeIncrement[i] = -fadeIncrement[i];
-          }
-          
-          leds.reset(i);
-        }
-      }
-      
-      // rotate the fade values
-      if(untilRotate <= 0) {
-        untilRotate = rotateAfter;
-        int toWrapAround = fadeStepWait[0];
-        for(int i=0; i<QTYWAIT-1; i++)
-          fadeStepWait[i] = fadeStepWait[i+1];
-        fadeStepWait[QTYWAIT-1] = toWrapAround;
-  
-        // do a random swap
-        int i = prng() % QTYWAIT;
-        int j = prng() % QTYWAIT;
-        int temp = fadeStepWait[i];
-        fadeStepWait[i] = fadeStepWait[j];
-        fadeStepWait[j] = temp;
-      }
+      fadeMachine->doFade(leds);
       break; // end case fadeMode
       
       case lidarMode:
@@ -288,14 +219,3 @@ int extractDecimal(char str[], int start, int n) {
   return(value);
 }
 
-// returns a pseudorandom byte (using RC4)
-byte prng() {
-  static int i=0, j=0;
-  int temp;
-  i = ( i + 1 ) % 256;
-  j = ( j + rc4_S[i] ) % 256;
-  temp = rc4_S[i];
-  rc4_S[i] = rc4_S[j];
-  rc4_S[j] = temp;
-  return( rc4_S[ ( rc4_S[i] + rc4_S[j] ) % 256 ] );
-}
