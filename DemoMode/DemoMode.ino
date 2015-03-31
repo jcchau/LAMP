@@ -82,7 +82,7 @@ void setup() {
 }
 
 void loop() {
-  EthernetClient client = server.available(); //gives you a client!
+  EthernetClient client = server.available(); // gives you a client that has sent data to be read
   
   if(client) {  // tests if any data from the client is available for reading
     // Await the client's command if the client is connected
