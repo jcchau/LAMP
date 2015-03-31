@@ -53,6 +53,7 @@ void setup() {
   // Start the serial port for debugging
   Serial.begin(9600);
   Serial.println("LAMP Controller v.2015-03-30.");
+  Serial.println("Starting...");
 
   leds.show(3);
 
@@ -90,6 +91,8 @@ void setup() {
   leds.show(8);
   
   leds.allOff();  // in preparation for LIDAR mode
+  
+  Serial.println("Ready.");
 }
 
 void loop() {
